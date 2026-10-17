@@ -46,6 +46,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.TabRowDefaults
@@ -72,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import com.cryptoscope.app.core.agentic.AgenticEngine
 import com.cryptoscope.app.core.agentic.MissionReport
 import com.cryptoscope.app.core.agentic.MissionStep
+import com.cryptoscope.app.core.agentic.TradingStrategy
 import com.cryptoscope.app.core.database.AppDatabase
 import com.cryptoscope.app.core.database.CopyTradeEntity
 import com.cryptoscope.app.core.database.SmartWalletEntity
@@ -80,6 +83,9 @@ import com.cryptoscope.app.core.llm.ChatMessage
 import com.cryptoscope.app.core.llm.CustomLlmClient
 import com.cryptoscope.app.core.llm.LlmConfig
 import com.cryptoscope.app.core.llm.LlmConfigManager
+import com.cryptoscope.app.core.telegram.TelegramBridge
+import com.cryptoscope.app.core.telegram.TelegramConfig
+import com.cryptoscope.app.core.telegram.TelegramConfigManager
 import com.cryptoscope.app.presentation.theme.CryptoGold
 import com.cryptoscope.app.presentation.theme.CryptoGreen
 import com.cryptoscope.app.presentation.theme.CryptoRed
@@ -103,6 +109,8 @@ fun AiCopilotScreen(
 
     var selectedMode by remember { mutableStateOf("AUTOPILOT") } // "AUTOPILOT" or "CHAT"
     var config by remember { mutableStateOf(LlmConfigManager.getConfig(context)) }
+    var telegramConfig by remember { mutableStateOf(TelegramConfigManager.getConfig(context)) }
+    var selectedStrategy by remember { mutableStateOf(TradingStrategy.MOMENTUM_SCALP) }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     // Chat State
@@ -136,8 +144,10 @@ fun AiCopilotScreen(
             val stepsList = mutableListOf<MissionStep>()
             val report = AgenticEngine.executeAutonomousMission(
                 command = command,
+                strategy = selectedStrategy,
                 database = database,
                 llmConfig = config,
+                telegramConfig = telegramConfig,
                 onStepUpdate = { step ->
                     stepsList.removeAll { it.stepIndex == step.stepIndex }
                     stepsList.add(step)
@@ -207,7 +217,7 @@ fun AiCopilotScreen(
                             )
                         }
                         Text(
-                            text = "${config.model} • ${config.endpoint.take(24)}...",
+                            text = "${config.model} • ${if (telegramConfig.isEnabled) "TG: Online 📡" else "TG: Nonaktif"}",
                             color = TextSecondary,
                             fontSize = 11.sp
                         )
@@ -283,10 +293,44 @@ fun AiCopilotScreen(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                             Text(
-                                "Agentic AI berjalan secara mandiri: memindai token smart wallet, menjalankan audit 7-layer Anti-Trap untuk mendeteksi honeypot, menghitung strategi via Custom LLM, dan mengeksekusi posisi di portofolio.",
+                                "Agentic AI berjalan secara mandiri dengan 3 Sub-Agent: Sentinel (audit honeypot & rugpull), Strategist (analisa teknikal LLM), dan Executor (eksekusi order & remote alert Telegram).",
                                 color = TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 17.sp
+                            )
+                        }
+                    }
+                }
+
+                // Strategy Selector
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = DarkCard)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("PILIH STRATEGI TRADING OTONOM:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(TradingStrategy.values()) { strat ->
+                                    FilterChip(
+                                        selected = selectedStrategy == strat,
+                                        onClick = { selectedStrategy = strat },
+                                        label = { Text(strat.label, fontSize = 11.sp, fontWeight = if (selectedStrategy == strat) FontWeight.Bold else FontWeight.Normal) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = CryptoGreen,
+                                            selectedLabelColor = Color.Black,
+                                            containerColor = Color(0xFF1E2638),
+                                            labelColor = TextPrimary
+                                        )
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "💡 ${selectedStrategy.description}",
+                                color = CryptoGold,
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
@@ -300,7 +344,7 @@ fun AiCopilotScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = {
-                                runMission("Scan smart wallet terbaik, filter honeypot dan rugpull, eksekusi 1 posisi trading paling potensial sekarang.")
+                                runMission("Scan smart wallet terbaik, filter honeypot dan rugpull, eksekusi 1 posisi trading paling potensial sekarang dengan strategi ${selectedStrategy.label}.")
                             },
                             enabled = !isMissionRunning,
                             modifier = Modifier.fillMaxWidth(),
@@ -401,8 +445,19 @@ fun AiCopilotScreen(
                                             tint = if (step.isWarning) CryptoGold else CryptoGreen,
                                             modifier = Modifier.size(18.dp)
                                         )
-                                        Column {
-                                            Text(step.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text(step.title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                                step.subAgent?.let { agentName ->
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .background(Color(0xFF1E293B), RoundedCornerShape(4.dp))
+                                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    ) {
+                                                        Text(agentName, color = CryptoGold, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
                                             Text(step.detail, color = TextSecondary, fontSize = 11.sp, lineHeight = 16.sp)
                                         }
                                     }
@@ -426,12 +481,26 @@ fun AiCopilotScreen(
                                     Text("LAPORAN DEBRIEF EKSEKUSI OTONOM", color = CryptoGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 }
 
-                                Text(
-                                    text = "🎯 Tindakan: ${report.actionTaken}",
-                                    color = TextPrimary,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🎯 Tindakan: ${report.actionTaken}",
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(CryptoGreen.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(report.strategy.label, color = CryptoGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
 
                                 report.blockedTrap?.let { trap ->
                                     Box(
@@ -631,12 +700,15 @@ fun AiCopilotScreen(
     if (showSettingsDialog) {
         LlmSettingsDialog(
             currentConfig = config,
+            currentTgConfig = telegramConfig,
             onDismiss = { showSettingsDialog = false },
-            onSave = { newConfig ->
+            onSave = { newConfig, newTgConfig ->
                 config = newConfig
+                telegramConfig = newTgConfig
                 LlmConfigManager.saveConfig(context, newConfig)
+                TelegramConfigManager.saveConfig(context, newTgConfig)
                 showSettingsDialog = false
-                Toast.makeText(context, "Konfigurasi LLM tersimpan", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Pengaturan LLM & Telegram tersimpan", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -645,8 +717,9 @@ fun AiCopilotScreen(
 @Composable
 fun LlmSettingsDialog(
     currentConfig: LlmConfig,
+    currentTgConfig: TelegramConfig,
     onDismiss: () -> Unit,
-    onSave: (LlmConfig) -> Unit
+    onSave: (LlmConfig, TelegramConfig) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
     var endpoint by remember { mutableStateOf(currentConfig.endpoint) }
@@ -658,18 +731,26 @@ fun LlmSettingsDialog(
     var testResult by remember { mutableStateOf<String?>(null) }
     var isTestSuccess by remember { mutableStateOf(false) }
 
+    // Telegram Settings State
+    var tgEnabled by remember { mutableStateOf(currentTgConfig.isEnabled) }
+    var tgBotToken by remember { mutableStateOf(currentTgConfig.botToken) }
+    var tgChatId by remember { mutableStateOf(currentTgConfig.chatId) }
+    var isTgTesting by remember { mutableStateOf(false) }
+    var tgTestResult by remember { mutableStateOf<String?>(null) }
+    var isTgSuccess by remember { mutableStateOf(false) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.Settings, contentDescription = null, tint = CryptoGreen)
-                Text("Kustom LLM Setting", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Kustom LLM & Telegram", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
         },
         text = {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
-                    Text("Pilih Preset Cepat:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Pilih Preset LLM Cepat:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                     Spacer(modifier = Modifier.height(4.dp))
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item {
@@ -729,7 +810,7 @@ fun LlmSettingsDialog(
                     OutlinedTextField(
                         value = endpoint,
                         onValueChange = { endpoint = it },
-                        label = { Text("Base URL / Endpoint") },
+                        label = { Text("Base URL / Endpoint LLM") },
                         placeholder = { Text("http://192.168.x.x:11434/v1") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -745,7 +826,7 @@ fun LlmSettingsDialog(
                     OutlinedTextField(
                         value = model,
                         onValueChange = { model = it },
-                        label = { Text("Nama Model") },
+                        label = { Text("Nama Model LLM") },
                         placeholder = { Text("llama3 / gpt-4o-mini / deepseek-chat") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
@@ -773,7 +854,7 @@ fun LlmSettingsDialog(
                     )
                 }
 
-                // Test Connection Area
+                // Test LLM Connection Area
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -803,11 +884,11 @@ fun LlmSettingsDialog(
                             if (isTesting) {
                                 CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("Testing...", fontSize = 12.sp)
+                                Text("Testing LLM...", fontSize = 12.sp)
                             } else {
                                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Tes Koneksi", fontSize = 12.sp)
+                                Text("Tes Koneksi LLM", fontSize = 12.sp)
                             }
                         }
                     }
@@ -841,12 +922,117 @@ fun LlmSettingsDialog(
                         }
                     }
                 }
+
+                // Telegram Bridge Settings Section
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("TELEGRAM REMOTE BRIDGE (ALERT EKSEKUSI):", color = CryptoGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Aktifkan Alert Telegram", color = TextPrimary, fontSize = 13.sp)
+                        Switch(
+                            checked = tgEnabled,
+                            onCheckedChange = { tgEnabled = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = CryptoGreen,
+                                checkedTrackColor = CryptoGreen.copy(alpha = 0.4f)
+                            )
+                        )
+                    }
+                }
+
+                if (tgEnabled) {
+                    item {
+                        OutlinedTextField(
+                            value = tgBotToken,
+                            onValueChange = { tgBotToken = it },
+                            label = { Text("Telegram Bot Token") },
+                            placeholder = { Text("123456789:ABCdefGhI...") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CryptoGreen,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                    }
+
+                    item {
+                        OutlinedTextField(
+                            value = tgChatId,
+                            onValueChange = { tgChatId = it },
+                            label = { Text("Target Chat ID") },
+                            placeholder = { Text("123456789 atau @channel") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CryptoGreen,
+                                focusedTextColor = TextPrimary,
+                                unfocusedTextColor = TextPrimary
+                            )
+                        )
+                    }
+
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                isTgTesting = true
+                                tgTestResult = null
+                                coroutineScope.launch {
+                                    val res = TelegramBridge.testConnection(tgBotToken, tgChatId)
+                                    isTgTesting = false
+                                    res.onSuccess {
+                                        isTgSuccess = true
+                                        tgTestResult = it
+                                    }.onFailure {
+                                        isTgSuccess = false
+                                        tgTestResult = it.localizedMessage ?: "Gagal kirim ping."
+                                    }
+                                }
+                            },
+                            enabled = !isTgTesting && tgBotToken.isNotBlank() && tgChatId.isNotBlank(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            if (isTgTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Mengirim ping...", fontSize = 12.sp)
+                            } else {
+                                Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Tes Ping Telegram", fontSize = 12.sp)
+                            }
+                        }
+
+                        tgTestResult?.let { msg ->
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = msg,
+                                color = if (isTgSuccess) CryptoGreen else CryptoRed,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
                 onClick = {
-                    onSave(LlmConfig(endpoint = endpoint, apiKey = apiKey, model = model, systemPrompt = systemPrompt))
+                    val newLlm = LlmConfig(endpoint = endpoint, apiKey = apiKey, model = model, systemPrompt = systemPrompt)
+                    val newTg = TelegramConfig(
+                        botToken = tgBotToken,
+                        chatId = tgChatId,
+                        isEnabled = tgEnabled,
+                        alertOnTraps = true,
+                        alertOnTrades = true
+                    )
+                    onSave(newLlm, newTg)
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = CryptoGreen)
             ) {

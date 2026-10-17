@@ -13,8 +13,8 @@ android {
         applicationId = "com.cryptoscope.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -22,15 +22,28 @@ android {
         }
     }
 
+    signingConfigs {
+        create("custom") {
+            storeFile = file("keystore/cryptoscope.jks")
+            storePassword = "cryptoscope123"
+            keyAlias = "cryptoscope"
+            keyPassword = "cryptoscope123"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("custom")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
         debug {
+            signingConfig = signingConfigs.getByName("custom")
             applicationIdSuffix = ".debug"
             isDebuggable = true
         }

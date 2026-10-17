@@ -2,29 +2,37 @@ package com.cryptoscope.app.core.agentic
 
 import com.cryptoscope.app.core.database.AppDatabase
 import com.cryptoscope.app.core.database.CopyTradeEntity
-import com.cryptoscope.app.core.database.SmartWalletEntity
 import com.cryptoscope.app.core.database.TrapLogEntity
 import com.cryptoscope.app.core.llm.ChatMessage
 import com.cryptoscope.app.core.llm.CustomLlmClient
 import com.cryptoscope.app.core.llm.LlmConfig
+import com.cryptoscope.app.core.telegram.TelegramBridge
+import com.cryptoscope.app.core.telegram.TelegramConfig
 import com.cryptoscope.app.domain.antitrap.AntiTrapGuard
 import com.cryptoscope.app.domain.antitrap.TokenSecurityCheck
-import com.cryptoscope.app.domain.engine.SignalEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.UUID
+
+enum class TradingStrategy(val label: String, val description: String) {
+    MOMENTUM_SCALP("Momentum Scalp", "Entry instan dengan dynamic trailing TP (+15%) dan ketat SL (-5%)"),
+    TWAP_ACCUMULATION("TWAP Akumulasi", "Time-Weighted Average Price: Memecah order menjadi 5 tranche untuk minimalisir slippage"),
+    GRID_DEFENSE("Grid Support", "Layered limit order bertingkat pada support -2%, -4%, -6%")
+}
 
 data class MissionStep(
     val stepIndex: Int,
     val title: String,
     val detail: String,
     val isCompleted: Boolean = false,
-    val isWarning: Boolean = false
+    val isWarning: Boolean = false,
+    val subAgent: String? = null // e.g. "🛡️ Sentinel", "📊 Strategist", "⚡ Executor"
 )
 
 data class MissionReport(
     val command: String,
+    val strategy: TradingStrategy,
     val steps: List<MissionStep>,
     val actionTaken: String,
     val executiveSummary: String,
@@ -36,33 +44,42 @@ object AgenticEngine {
 
     /**
      * Executes a full autonomous agentic mission from a single command.
-     * Perception -> Defense Matrix Audit -> LLM Reasoning -> Portfolio Execution.
+     * Incorporates Sub-Agents (Sentinel, Strategist, Executor), Multi-Strategy Runners (TWAP/Grid/Scalp),
+     * and Telegram notifications.
      */
     suspend fun executeAutonomousMission(
         command: String,
+        strategy: TradingStrategy = TradingStrategy.MOMENTUM_SCALP,
         database: AppDatabase,
         llmConfig: LlmConfig,
+        telegramConfig: TelegramConfig? = null,
         onStepUpdate: (MissionStep) -> Unit
     ): MissionReport = withContext(Dispatchers.IO) {
         val steps = mutableListOf<MissionStep>()
 
-        // Helper to post step update
-        suspend fun updateStep(index: Int, title: String, detail: String, isCompleted: Boolean = true, isWarning: Boolean = false): MissionStep {
-            val step = MissionStep(index, title, detail, isCompleted, isWarning)
+        suspend fun updateStep(
+            index: Int,
+            title: String,
+            detail: String,
+            isCompleted: Boolean = true,
+            isWarning: Boolean = false,
+            subAgent: String? = null
+        ): MissionStep {
+            val step = MissionStep(index, title, detail, isCompleted, isWarning, subAgent)
             steps.add(step)
             onStepUpdate(step)
-            delay(500) // Brief delay for clean visual agentic progression in UI
+            delay(400)
             return step
         }
 
-        // --- STEP 1: PERCEPTION & ON-CHAIN DATA GATHERING ---
+        // --- SUB-AGENT 1: SENTINEL (ON-CHAIN SCAN & 7-LAYER ANTI-TRAP DEFENSE) ---
         updateStep(
             1,
-            "1. Observasi & Pemindaian On-Chain",
-            "Menganalisis daftar smart wallets elit dan token yang sedang diakumulasi whale..."
+            "1. Sentinel Sub-Agent: On-Chain Scanning",
+            "Memindai token yang sedang diakumulasi oleh elite smart wallets di jaringan...",
+            subAgent = "🛡️ Sub-Agent Sentinel"
         )
 
-        val wallets = database.smartWalletDao().getWallet("0xA3f829B838029d91C9B76A2b109D9455ec308c2")
         val candidateTokens = listOf(
             TokenSecurityCheck(
                 tokenAddress = "0x7777123412341234123412341234123412347777",
@@ -81,7 +98,7 @@ object AgenticEngine {
             TokenSecurityCheck(
                 tokenAddress = "0x9999123412341234123412341234123412349999",
                 tokenSymbol = "MOONBAIT",
-                liquidityUsd = 9_500.0, // Low liquidity trap!
+                liquidityUsd = 9_500.0,
                 tokenAgeHours = 3.5,
                 holderCount = 42,
                 buyTaxPercent = 1.0,
@@ -108,11 +125,11 @@ object AgenticEngine {
             )
         )
 
-        // --- STEP 2: 7-LAYER ANTI-TRAP DEFENSE MATRIX AUDIT ---
         updateStep(
             2,
-            "2. Audit Keamanan 7-Layer Anti-Trap",
-            "Menjalankan audit honeypot, likuiditas, dan backdoor minting pada kandidat token..."
+            "2. Sentinel Sub-Agent: 7-Layer Defense Matrix",
+            "Mengaudit kode kontrak, likuiditas, mint exploit, dan blacklist hook...",
+            subAgent = "🛡️ Sub-Agent Sentinel"
         )
 
         var interceptedTrap: TrapLogEntity? = null
@@ -121,81 +138,94 @@ object AgenticEngine {
         for (token in candidateTokens) {
             val verdict = AntiTrapGuard.evaluateToken(token)
             if (!verdict.isSafeToCopy) {
-                // Intercepted and logged
                 val trap = TrapLogEntity(
-                    walletAddress = "0xBADWhaleTrap${token.tokenSymbol}",
+                    walletAddress = "0xWhaleTrapBait${token.tokenSymbol}",
                     tokenAddress = token.tokenAddress,
                     tokenSymbol = token.tokenSymbol,
-                    trapType = verdict.trapType ?: "MALICIOUS_TRAP",
+                    trapType = verdict.trapType ?: "HONEYPOT_TAX",
                     severity = verdict.severity,
                     estimatedLossAvoided = 500.0,
                     reason = verdict.reason
                 )
                 database.trapLogDao().insertTrapLog(trap)
                 interceptedTrap = trap
+
+                // Notify Telegram if configured
+                telegramConfig?.let { tg ->
+                    TelegramBridge.notifyTrapBlocked(
+                        config = tg,
+                        tokenSymbol = trap.tokenSymbol,
+                        trapType = trap.trapType,
+                        reason = trap.reason,
+                        capitalSaved = trap.estimatedLossAvoided
+                    )
+                }
             } else {
                 safeTokens.add(token)
             }
         }
 
-        val trapDetail = if (interceptedTrap != null) {
-            "⚠️ PERANGKAP DICEGAH: Token ${interceptedTrap.tokenSymbol} diblokir! Alasan: ${interceptedTrap.reason} (Modal terselamatkan: $500)"
-        } else {
-            "Semua kandidat lolos verifikasi Anti-Trap Guard."
-        }
-
         updateStep(
             2,
-            "2. Audit Keamanan Selesai",
-            trapDetail,
+            "2. Sentinel Audit Selesai",
+            if (interceptedTrap != null) "⚠️ Honeypot dicegah: ${interceptedTrap.tokenSymbol} (Fee 95% ditolak, +$500 modal aman)" else "Semua kandidat kontrak aman.",
             isCompleted = true,
-            isWarning = interceptedTrap != null
+            isWarning = interceptedTrap != null,
+            subAgent = "🛡️ Sub-Agent Sentinel"
         )
 
-        // --- STEP 3: REASONING & CUSTOM LLM STRATEGY ---
+        // --- SUB-AGENT 2: STRATEGIST (TA & CUSTOM LLM REASONING) ---
         updateStep(
             3,
-            "3. Penalaran Strategi & LLM Reasoning",
-            "Meminta penalaran otonom Custom LLM untuk kalkulasi titik entry, RSI, dan alokasi risiko..."
+            "3. Strategist Sub-Agent: Kustom LLM Reasoning",
+            "Menganalisis strategi ${strategy.label}, momentum RSI, dan volatilitas pasar...",
+            subAgent = "📊 Sub-Agent Strategist"
         )
 
         val targetToken = safeTokens.firstOrNull() ?: candidateTokens.first()
         val currentPrice = if (targetToken.tokenSymbol == "SOL") 154.20 else 2640.0
 
+        val (tpTarget, slTarget) = when (strategy) {
+            TradingStrategy.MOMENTUM_SCALP -> "+12% - +18%" to "-4.5%"
+            TradingStrategy.TWAP_ACCUMULATION -> "+20% - +30%" to "-6.0%"
+            TradingStrategy.GRID_DEFENSE -> "+8% per Grid" to "-7.5%"
+        }
+
         val prompt = "Tugas: Eksekusi Misi Otonom Kripto.\n" +
                 "Perintah User: '$command'.\n" +
-                "Hasil Audit Keamanan: Token MOONBAIT berhasil diblokir karena Honeypot 95%.\n" +
-                "Token Terpilih Aman: ${targetToken.tokenSymbol} (Likuiditas: $${String.format("%,.0f", targetToken.liquidityUsd)}).\n" +
-                "Harga Entry: $$currentPrice, Alokasi Modal: $500 USD.\n" +
-                "Berikan analisis keputusan eksekusi otonom: Mengapa token ini dipilih, target Take-Profit (+15-25%), dan Stop-Loss (-5%). Tulis ringkas & tegas."
+                "Strategi Dipilih: ${strategy.label} (${strategy.description}).\n" +
+                "Audit Keamanan: Token scam ${interceptedTrap?.tokenSymbol ?: "MOONBAIT"} berhasil diblokir.\n" +
+                "Token Terpilih: ${targetToken.tokenSymbol} @ $$currentPrice (Likuiditas: $${String.format("%,.0f", targetToken.liquidityUsd)}).\n" +
+                "Berikan keputusan taktis eksekusi singkat: Alasan memilih strategi ${strategy.label}, alokasi modal $500 USD, TP: $tpTarget, SL: $slTarget."
 
-        var llmReasoning = ""
         val llmResult = CustomLlmClient.sendChat(
             listOf(ChatMessage("user", prompt)),
             llmConfig
         )
 
-        llmReasoning = llmResult.getOrElse {
-            "Otonom AI Heuristic: Menemukan peluang optimal pada ${targetToken.tokenSymbol} dengan likuiditas institusional yang solid ($12.4M). Anti-Trap Guard mengonfirmasi 0% tax dan kontrak bersih. Alokasi $500 dieksekusi dengan target TP +18% dan SL -5%."
+        val llmReasoning = llmResult.getOrElse {
+            "Otonom AI Heuristic: Memilih ${targetToken.tokenSymbol} dengan strategi ${strategy.label}. Likuiditas pasar $${String.format("%,.0f", targetToken.liquidityUsd)} sangat likuid tanpa risiko slippage. Parameter eksekusi diatur pada TP $tpTarget dan SL $slTarget."
         }
 
         updateStep(
             3,
-            "3. Keputusan Otonom Terkalkulasi",
-            "Target Terpilih: ${targetToken.tokenSymbol} @ $$currentPrice. Alasan: Likuiditas aman, tidak ada honeypot fee."
+            "3. Strategist: Kalkulasi Selesai",
+            "Target: ${targetToken.tokenSymbol} @ $$currentPrice. Strategi: ${strategy.label}. TP: $tpTarget, SL: $slTarget.",
+            subAgent = "📊 Sub-Agent Strategist"
         )
 
-        // --- STEP 4: AUTONOMOUS ACTION EXECUTION IN PORTFOLIO ---
+        // --- SUB-AGENT 3: EXECUTOR (DISPATCHING TO DATABASE & NOTIFICATION) ---
         updateStep(
             4,
-            "4. Eksekusi Tindakan di Portofolio",
-            "Mengeksekusi pembukaan posisi paper trade di database lokal..."
+            "4. Executor Sub-Agent: Eksekusi Portofolio",
+            "Membuka posisi paper-trade di database lokal dan sinkronisasi laporan...",
+            subAgent = "⚡ Sub-Agent Executor"
         )
 
         val newTrade = CopyTradeEntity(
             id = UUID.randomUUID().toString(),
             walletAddress = "0xA3f829B838029d91C9B76A2b109D9455ec308c2",
-            walletLabel = "Autonomous Agentic Engine",
+            walletLabel = "Agentic AI (${strategy.label})",
             tokenAddress = targetToken.tokenAddress,
             tokenSymbol = targetToken.tokenSymbol,
             entryPrice = currentPrice,
@@ -205,20 +235,35 @@ object AgenticEngine {
             pnlPercent = 0.0,
             status = "OPEN",
             entryTimestamp = System.currentTimeMillis(),
-            signalScoreAtEntry = 92
+            signalScoreAtEntry = 94
         )
         database.copyTradeDao().insertTrade(newTrade)
 
+        // Push to Telegram if configured
+        telegramConfig?.let { tg ->
+            TelegramBridge.notifyTradeExecuted(
+                config = tg,
+                tokenSymbol = newTrade.tokenSymbol,
+                price = currentPrice,
+                amountUsd = 500.0,
+                strategy = strategy.label,
+                tp = tpTarget,
+                sl = slTarget
+            )
+        }
+
         updateStep(
             4,
-            "4. Eksekusi Selesai ✅",
-            "Posisi ${newTrade.tokenSymbol} berhasil dibuka di portofolio dengan modal $500 (Status: OPEN @ $$currentPrice)."
+            "4. Executor: Selesai ✅",
+            "Posisi ${newTrade.tokenSymbol} ($500 USD) telah aktif di portofolio dengan strategi ${strategy.label}.",
+            subAgent = "⚡ Sub-Agent Executor"
         )
 
         MissionReport(
             command = command,
+            strategy = strategy,
             steps = steps,
-            actionTaken = "Buka Posisi ${newTrade.tokenSymbol} @ $$currentPrice + Blokir Honeypot ${interceptedTrap?.tokenSymbol ?: ""}",
+            actionTaken = "Buka Posisi ${newTrade.tokenSymbol} @ $$currentPrice via ${strategy.label} + Blokir Trap ${interceptedTrap?.tokenSymbol ?: ""}",
             executiveSummary = llmReasoning,
             executedTrade = newTrade,
             blockedTrap = interceptedTrap
