@@ -25,12 +25,6 @@ class CryptoScopeApp : Application() {
             val initialWallets = SmartWalletDiscoveryEngine.getInitialSmartWallets()
             walletDao.insertWallets(initialWallets)
 
-            // Seed Initial Active Copy Trades
-            if (tradeDao.getOpenCount() == 0) {
-                PaperTradingSimulator.getInitialTrades().forEach { trade ->
-                    tradeDao.insertTrade(trade)
-                }
-            }
 
             // Seed Sample Intercepted Traps
             if (trapDao.getTotalTrapsCount() == 0) {

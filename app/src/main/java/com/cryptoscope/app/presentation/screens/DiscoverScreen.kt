@@ -50,7 +50,8 @@ import com.cryptoscope.app.presentation.theme.TextSecondary
 @Composable
 fun DiscoverScreen(
     wallets: List<SmartWalletEntity>,
-    onToggleFollow: (SmartWalletEntity) -> Unit
+    onToggleFollow: (SmartWalletEntity) -> Unit,
+    onCopyTradeFromWallet: ((SmartWalletEntity) -> Unit)? = null
 ) {
     var selectedFilter by remember { mutableStateOf("ALL") }
 
@@ -186,6 +187,18 @@ fun DiscoverScreen(
                                     Text("FOLLOWING (AUTO-COPY ACTIVE)", color = CryptoGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                 } else {
                                     Text("+ FOLLOW THIS WALLET", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+
+                            if (wallet.isFollowed && onCopyTradeFromWallet != null) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                OutlinedButton(
+                                    onClick = { onCopyTradeFromWallet(wallet) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CryptoGreen)
+                                ) {
+                                    Text("⚡ Paper-Trade 1 Posisi Sekarang (0% P&L)", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }

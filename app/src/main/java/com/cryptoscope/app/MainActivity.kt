@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CandlestickChart
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
@@ -28,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.cryptoscope.app.core.database.CopyTradeEntity
+import com.cryptoscope.app.presentation.screens.AiCopilotScreen
 import com.cryptoscope.app.presentation.screens.DashboardScreen
 import com.cryptoscope.app.presentation.screens.DiscoverScreen
 import com.cryptoscope.app.presentation.screens.SecurityGuardScreen
@@ -126,7 +128,21 @@ fun MainContent(database: com.cryptoscope.app.core.database.AppDatabase) {
                         if (firstTrade != null) {
                             selectedTradeForChart = firstTrade
                         } else {
-                            currentTab = "DASHBOARD"
+                            // Default market view chart if no copy trades exist yet
+                            selectedTradeForChart = CopyTradeEntity(
+                                id = "market-btc",
+                                walletAddress = "0xMARKET",
+                                walletLabel = "Global Market Index",
+                                tokenAddress = "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+                                tokenSymbol = "BTC",
+                                entryPrice = 67200.0,
+                                currentPrice = 67890.0,
+                                virtualAmountUsd = 500.0,
+                                pnlUsd = 5.13,
+                                pnlPercent = 1.02,
+                                status = "MARKET_VIEW",
+                                signalScoreAtEntry = 82
+                            )
                         }
                     },
                     icon = { Icon(Icons.Default.CandlestickChart, contentDescription = "Live Chart") },
@@ -152,6 +168,19 @@ fun MainContent(database: com.cryptoscope.app.core.database.AppDatabase) {
                         indicatorColor = CryptoGreen.copy(alpha = 0.15f)
                     )
                 )
+                NavigationBarItem(
+                    selected = currentTab == "COPILOT",
+                    onClick = { currentTab = "COPILOT" },
+                    icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "AI Copilot") },
+                    label = { Text("AI Copilot") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = CryptoGreen,
+                        selectedTextColor = CryptoGreen,
+                        unselectedIconColor = TextSecondary,
+                        unselectedTextColor = TextSecondary,
+                        indicatorColor = CryptoGreen.copy(alpha = 0.15f)
+                    )
+                )
             }
         }
     ) { innerPadding ->
@@ -165,7 +194,12 @@ fun MainContent(database: com.cryptoscope.app.core.database.AppDatabase) {
                     followedWallets = followedWallets,
                     openTrades = openTrades,
                     onSelectTrade = { trade -> selectedTradeForChart = trade },
-                    onNavigateToDiscover = { currentTab = "DISCOVER" }
+                    onNavigateToDiscover = { currentTab = "DISCOVER" },
+                    onResetTrades = {
+                        coroutineScope.launch {
+                            database.copyTradeDao().deleteAllTrades()
+                        }
+                    }
                 )
                 "DISCOVER" -> DiscoverScreen(
                     wallets = wallets,
@@ -173,9 +207,41 @@ fun MainContent(database: com.cryptoscope.app.core.database.AppDatabase) {
                         coroutineScope.launch {
                             database.smartWalletDao().setFollowed(wallet.address, !wallet.isFollowed)
                         }
+                    },
+                    onCopyTradeFromWallet = { wallet ->
+                        coroutineScope.launch {
+                            val (symbol, price) = when (wallet.chain) {
+                                "SOL" -> "SOL" to 154.20
+                                "BASE" -> "AERO" to 1.18
+                                "ARB" -> "ARB" to 0.58
+                                else -> "ETH" to 2640.0
+                            }
+                            val newTrade = CopyTradeEntity(
+                                id = java.util.UUID.randomUUID().toString(),
+                                walletAddress = wallet.address,
+                                walletLabel = wallet.label,
+                                tokenAddress = "0x" + wallet.address.takeLast(40),
+                                tokenSymbol = symbol,
+                                entryPrice = price,
+                                currentPrice = price,
+                                virtualAmountUsd = 500.0,
+                                pnlUsd = 0.0,
+                                pnlPercent = 0.0,
+                                status = "OPEN",
+                                entryTimestamp = System.currentTimeMillis(),
+                                signalScoreAtEntry = wallet.score
+                            )
+                            database.copyTradeDao().insertTrade(newTrade)
+                            currentTab = "DASHBOARD"
+                        }
                     }
                 )
                 "GUARD" -> SecurityGuardScreen(
+                    trapLogs = trapLogs
+                )
+                "COPILOT" -> AiCopilotScreen(
+                    followedWallets = followedWallets,
+                    openTrades = openTrades,
                     trapLogs = trapLogs
                 )
             }

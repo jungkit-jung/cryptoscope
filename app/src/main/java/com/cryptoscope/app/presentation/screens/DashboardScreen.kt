@@ -44,11 +44,12 @@ fun DashboardScreen(
     followedWallets: List<SmartWalletEntity>,
     openTrades: List<CopyTradeEntity>,
     onSelectTrade: (CopyTradeEntity) -> Unit,
-    onNavigateToDiscover: () -> Unit
+    onNavigateToDiscover: () -> Unit,
+    onResetTrades: () -> Unit
 ) {
     val totalEquity = 10000.0 + openTrades.sumOf { it.pnlUsd }
     val totalPnl = openTrades.sumOf { it.pnlUsd }
-    val totalPnlPct = (totalPnl / 10000.0) * 100.0
+    val totalPnlPct = if (openTrades.isEmpty()) 0.0 else (totalPnl / 10000.0) * 100.0
 
     LazyColumn(
         modifier = Modifier
@@ -99,12 +100,26 @@ fun DashboardScreen(
 
                     val pnlSign = if (totalPnl >= 0) "+$" else "-$"
                     val pctSign = if (totalPnlPct >= 0) "+%" else ""
-                    Text(
-                        text = "$pnlSign${String.format("%,.2f", kotlin.math.abs(totalPnl))} (${String.format("%.2f", totalPnlPct)}%) P&L",
-                        color = if (totalPnl >= 0) CryptoGreen else CryptoRed,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (openTrades.isEmpty()) "$0.00 (0.00%) P&L" else "$pnlSign${String.format("%,.2f", kotlin.math.abs(totalPnl))} (${String.format("%.2f", totalPnlPct)}%) P&L",
+                            color = if (totalPnl >= 0) CryptoGreen else CryptoRed,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (openTrades.isNotEmpty()) {
+                            androidx.compose.material3.TextButton(
+                                onClick = onResetTrades,
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                            ) {
+                                Text("Reset Portfolio", color = TextSecondary, fontSize = 11.sp)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -187,46 +202,92 @@ fun DashboardScreen(
             }
         }
 
-        items(openTrades) { trade ->
-            Card(
-                onClick = { onSelectTrade(trade) },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = DarkCard)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+        if (openTrades.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkCard)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(trade.tokenSymbol, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("via ${trade.walletLabel.take(15)}...", color = TextSecondary, fontSize = 11.sp)
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Entry: $${trade.entryPrice}  ➔  Now: $${trade.currentPrice}",
-                            color = TextSecondary,
-                            fontSize = 12.sp
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.TrendingUp,
+                            contentDescription = null,
+                            tint = CryptoGold,
+                            modifier = Modifier.size(36.dp)
                         )
-                    }
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        val isWin = trade.pnlUsd >= 0
+                        Spacer(modifier = Modifier.height(10.dp))
                         Text(
-                            text = if (isWin) "+$${String.format("%.2f", trade.pnlUsd)}" else "-$${String.format("%.2f", kotlin.math.abs(trade.pnlUsd))}",
-                            color = if (isWin) CryptoGreen else CryptoRed,
+                            text = "Portofolio Bersih ($10,000)",
+                            color = TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
+                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = if (isWin) "+${String.format("%.1f", trade.pnlPercent)}%" else "${String.format("%.1f", trade.pnlPercent)}%",
-                            color = if (isWin) CryptoGreen else CryptoRed,
-                            fontSize = 11.sp
+                            text = "Belum ada trade yang di-copy. Jelajahi Smart Wallet untuk mulai paper-trading otomatis tanpa risiko modal riil.",
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        androidx.compose.material3.Button(
+                            onClick = onNavigateToDiscover,
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = CryptoGreen),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Cari Smart Wallet untuk Di-Copy", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        } else {
+            items(openTrades) { trade ->
+                Card(
+                    onClick = { onSelectTrade(trade) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkCard)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(trade.tokenSymbol, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                Text("via ${trade.walletLabel.take(15)}...", color = TextSecondary, fontSize = 11.sp)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Entry: $${trade.entryPrice}  ➔  Now: $${trade.currentPrice}",
+                                color = TextSecondary,
+                                fontSize = 12.sp
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            val isWin = trade.pnlUsd >= 0
+                            Text(
+                                text = if (isWin) "+$${String.format("%.2f", trade.pnlUsd)}" else "-$${String.format("%.2f", kotlin.math.abs(trade.pnlUsd))}",
+                                color = if (isWin) CryptoGreen else CryptoRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp
+                            )
+                            Text(
+                                text = if (isWin) "+${String.format("%.1f", trade.pnlPercent)}%" else "${String.format("%.1f", trade.pnlPercent)}%",
+                                color = if (isWin) CryptoGreen else CryptoRed,
+                                fontSize = 11.sp
+                            )
+                        }
                     }
                 }
             }

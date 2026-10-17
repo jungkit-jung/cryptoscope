@@ -56,6 +56,9 @@ interface CopyTradeDao {
 
     @Query("SELECT COUNT(*) FROM copy_trades WHERE status = 'OPEN'")
     suspend fun getOpenCount(): Int
+
+    @Query("DELETE FROM copy_trades")
+    suspend fun deleteAllTrades()
 }
 
 @Dao

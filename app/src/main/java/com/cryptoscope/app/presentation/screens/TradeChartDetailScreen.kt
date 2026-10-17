@@ -250,6 +250,94 @@ fun TradeChartDetailScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // 5b. AI Custom LLM Quick Analyst
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+        var aiAnalysisText by remember { mutableStateOf<String?>(null) }
+        var isAnalyzing by remember { mutableStateOf(false) }
+
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF161E2E))
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(androidx.compose.material.icons.Icons.Default.AutoAwesome, contentDescription = null, tint = CryptoGreen, modifier = Modifier.size(16.dp))
+                        Text("AI COPILOT ANALYST", color = CryptoGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                    if (isAnalyzing) {
+                        androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(14.dp), color = CryptoGreen, strokeWidth = 2.dp)
+                    }
+                }
+
+                if (aiAnalysisText == null && !isAnalyzing) {
+                    Text(
+                        "Dapatkan analisis mendalam dari Custom LLM untuk token ${trade.tokenSymbol} berdasarkan RSI, Trend EMA, dan posisi entry saat ini.",
+                        color = TextSecondary,
+                        fontSize = 12.sp
+                    )
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            isAnalyzing = true
+                            aiAnalysisText = null
+                            coroutineScope.launch {
+                                val config = com.cryptoscope.app.core.llm.LlmConfigManager.getConfig(context)
+                                val prompt = "Tolong analisis token ${trade.tokenSymbol}. " +
+                                        "Data saat ini: Entry Price: $${trade.entryPrice}, Current Price: $${trade.currentPrice}, " +
+                                        "PnL: ${trade.pnlPercent}%, RSI(14): ${technicals.rsi}, Trend: ${technicals.emaStatus}, " +
+                                        "Bollinger Bands: ${technicals.bbStatus}, Signal Score: ${technicals.score}/100. " +
+                                        "Apakah sebaiknya Take Profit, Hold, atau Cut Loss? Berikan analisa ringkas dan padat."
+                                val result = com.cryptoscope.app.core.llm.CustomLlmClient.sendChat(
+                                    listOf(com.cryptoscope.app.core.llm.ChatMessage("user", prompt)),
+                                    config
+                                )
+                                isAnalyzing = false
+                                result.onSuccess { reply ->
+                                    aiAnalysisText = reply
+                                }.onFailure { err ->
+                                    aiAnalysisText = "⚠️ Gagal menghubungi LLM: ${err.localizedMessage}. Pastikan server LLM aktif di menu AI Copilot."
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = CryptoGreen)
+                    ) {
+                        Icon(androidx.compose.material.icons.Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Minta Analisis AI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else if (isAnalyzing) {
+                    Text("Menghubungi Custom LLM dan menganalisis chart...", color = TextSecondary, fontSize = 12.sp)
+                } else {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(
+                            text = aiAnalysisText.orEmpty(),
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp
+                        )
+                    }
+                    androidx.compose.material3.TextButton(
+                        onClick = { aiAnalysisText = null },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                    ) {
+                        Text("Tutup Analisis", color = TextSecondary, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
         // 6. Action Button: Manual Close (Paper)
