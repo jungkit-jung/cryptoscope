@@ -641,3 +641,224 @@ fun AiCopilotScreen(
         )
     }
 }
+
+@Composable
+fun LlmSettingsDialog(
+    currentConfig: LlmConfig,
+    onDismiss: () -> Unit,
+    onSave: (LlmConfig) -> Unit
+) {
+    val coroutineScope = rememberCoroutineScope()
+    var endpoint by remember { mutableStateOf(currentConfig.endpoint) }
+    var apiKey by remember { mutableStateOf(currentConfig.apiKey) }
+    var model by remember { mutableStateOf(currentConfig.model) }
+    var systemPrompt by remember { mutableStateOf(currentConfig.systemPrompt) }
+
+    var isTesting by remember { mutableStateOf(false) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    var isTestSuccess by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Settings, contentDescription = null, tint = CryptoGreen)
+                Text("Kustom LLM Setting", color = TextPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item {
+                    Text("Pilih Preset Cepat:", color = TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        item {
+                            FilterChip(
+                                selected = endpoint.contains(":11434"),
+                                onClick = {
+                                    endpoint = "http://192.168.1.100:11434/v1"
+                                    model = "llama3"
+                                },
+                                label = { Text("Ollama LAN", fontSize = 10.sp) }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = endpoint.contains("127.0.0.1"),
+                                onClick = {
+                                    endpoint = "http://127.0.0.1:11434/v1"
+                                    model = "llama3"
+                                },
+                                label = { Text("Termux Local", fontSize = 10.sp) }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = endpoint.contains("groq.com"),
+                                onClick = {
+                                    endpoint = "https://api.groq.com/openai/v1"
+                                    model = "llama-3.3-70b-versatile"
+                                },
+                                label = { Text("Groq Cloud", fontSize = 10.sp) }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = endpoint.contains("openrouter.ai"),
+                                onClick = {
+                                    endpoint = "https://openrouter.ai/api/v1"
+                                    model = "meta-llama/llama-3-8b-instruct"
+                                },
+                                label = { Text("OpenRouter", fontSize = 10.sp) }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = endpoint.contains("openai.com"),
+                                onClick = {
+                                    endpoint = "https://api.openai.com/v1"
+                                    model = "gpt-4o-mini"
+                                },
+                                label = { Text("OpenAI", fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = endpoint,
+                        onValueChange = { endpoint = it },
+                        label = { Text("Base URL / Endpoint") },
+                        placeholder = { Text("http://192.168.x.x:11434/v1") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CryptoGreen,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it },
+                        label = { Text("Nama Model") },
+                        placeholder = { Text("llama3 / gpt-4o-mini / deepseek-chat") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CryptoGreen,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                }
+
+                item {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it },
+                        label = { Text("API Key (Kosongkan jika local Ollama)") },
+                        placeholder = { Text("sk-...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CryptoGreen,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        )
+                    )
+                }
+
+                // Test Connection Area
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                isTesting = true
+                                testResult = null
+                                coroutineScope.launch {
+                                    val tempConfig = LlmConfig(endpoint = endpoint, apiKey = apiKey, model = model, systemPrompt = systemPrompt)
+                                    val res = CustomLlmClient.testConnection(tempConfig)
+                                    isTesting = false
+                                    res.onSuccess {
+                                        isTestSuccess = true
+                                        testResult = it
+                                    }.onFailure {
+                                        isTestSuccess = false
+                                        testResult = it.message ?: "Gagal terhubung."
+                                    }
+                                }
+                            },
+                            enabled = !isTesting && endpoint.isNotBlank(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Testing...", fontSize = 12.sp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Tes Koneksi", fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    testResult?.let { msg ->
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isTestSuccess) CryptoGreen.copy(alpha = 0.15f) else CryptoRed.copy(alpha = 0.15f)
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    if (isTestSuccess) Icons.Default.CheckCircle else Icons.Default.Error,
+                                    contentDescription = null,
+                                    tint = if (isTestSuccess) CryptoGreen else CryptoRed,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = msg,
+                                    color = if (isTestSuccess) CryptoGreen else CryptoRed,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(LlmConfig(endpoint = endpoint, apiKey = apiKey, model = model, systemPrompt = systemPrompt))
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CryptoGreen)
+            ) {
+                Text("Simpan", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Batal", color = TextSecondary)
+            }
+        },
+        containerColor = DarkCard
+    )
+}
+
