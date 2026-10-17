@@ -240,6 +240,7 @@ fun MainContent(database: com.cryptoscope.app.core.database.AppDatabase) {
                     trapLogs = trapLogs
                 )
                 "COPILOT" -> AiCopilotScreen(
+                    database = database,
                     followedWallets = followedWallets,
                     openTrades = openTrades,
                     trapLogs = trapLogs
